@@ -1,10 +1,11 @@
 const Accommodation = require("../../schema/Reservation/accommodation.model");
 const RestaurantReservation = require("../../schema/Reservation/restaurantReservation.model");
 const MeetingOrWeddingReservation = require("../../schema/Reservation/meetingOrWeddingReservation.model");
+const Table = require("../../schema/Table/table.model");
 
 const sendAcknowledgementEmail = require("../../config/mail/reservation/sendAcknowledgementEmail");
 const sendConfirmationEmail = require("../../config/mail/reservation/sendConfirmationEmail");
-const { emitReservationEvent } = require("../../utils/socketManager");
+const { emitReservationEvent, emitTableEvent } = require("../../utils/socketManager");
 
 // Helper → select correct model
 const modelSelector = (typeRaw) => {
@@ -27,6 +28,9 @@ exports.createAccommodationBooking = async (req, res) => {
     const doc = await Accommodation.create({ arrivalDate, departureDate, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC });
 
     await sendAcknowledgementEmail(doc, "Accommodation");
+
+    // Emit socket event for real-time updates
+    emitReservationEvent('reservationCreated', doc);
 
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
@@ -63,6 +67,9 @@ exports.createMeetingReservation = async (req, res) => {
     const doc = await MeetingOrWeddingReservation.create({ typeOfReservation, reservationDate, reservationEndDate, numberOfRooms, numberOfGuests, additionalDetails, guestInfo, agreeToTnC });
 
     await sendAcknowledgementEmail(doc, "Meeting");
+
+    // Emit socket event for real-time updates
+    emitReservationEvent('reservationCreated', doc);
 
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
@@ -140,6 +147,54 @@ exports.updateStatus = async (req, res) => {
 
     if (status.toLowerCase() === "confirmed") {
       await sendConfirmationEmail(updated, type);
+
+      // Assign table for restaurant reservations
+      if (type === "restaurant") {
+        const table = await Table.findOne({ status: 'available', capacity: { $gte: updated.noOfDiners } }).sort({ capacity: 1 });
+        if (table) {
+          table.status = 'reserved';
+          table.currentReservation = {
+            reservationId: updated._id,
+            reservationType: 'restaurant',
+            guestName: updated.guestInfo.name,
+            assignedBy: req.user ? req.user._id : null
+          };
+          table.currentGuest = updated.guestInfo.name;
+          table.lastAssignedAt = new Date();
+          await table.save();
+
+          // Emit socket events for table update
+          emitTableEvent('tableUpdated', table, table._id);
+          emitTableEvent('tableStatusChanged', { tableId: table._id, tableNumber: table.tableNumber, status: table.status }, table._id);
+        } else {
+          console.warn(`No available table for reservation ${id}`);
+        }
+      }
+    }
+
+    if (status.toLowerCase() === "cancelled") {
+      // Free assigned tables
+      const assignedTables = await Table.find({ 'currentReservation.reservationId': updated._id });
+      for (const tableDoc of assignedTables) {
+        tableDoc.status = 'available';
+        tableDoc.currentReservation = { reservationId: null, reservationType: null, guestName: null, assignedBy: null };
+        tableDoc.currentGuest = null;
+        tableDoc.lastFreedAt = new Date();
+        tableDoc.assignmentHistory.push({
+          reservationId: updated._id,
+          reservationType: type,
+          guestName: updated.guestInfo.name,
+          assignedAt: tableDoc.lastAssignedAt || new Date(),
+          freedAt: new Date(),
+          assignedBy: req.user ? req.user._id : null,
+          notes: 'Reservation cancelled'
+        });
+        await tableDoc.save();
+
+        // Emit socket events for table update
+        emitTableEvent('tableUpdated', tableDoc, tableDoc._id);
+        emitTableEvent('tableStatusChanged', { tableId: tableDoc._id, tableNumber: tableDoc.tableNumber, status: tableDoc.status }, tableDoc._id);
+      }
     }
 
     // Emit socket event for real-time updates

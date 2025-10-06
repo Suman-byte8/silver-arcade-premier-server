@@ -20,7 +20,6 @@ npm-debug.log*
 
 .txt
 
-/test
-
+/tests
 /scripts
 

@@ -64,7 +64,15 @@ app.use('/api/reservations', reservationRoutes);
 // contact routes
 app.use('/api/contact', contactRoutes);
 // table reservation routes
+console.log('🔍 [DEBUG] Loading table routes...');
 app.use('/api/tables', tableRoutes);
+console.log('🔍 [DEBUG] Table routes loaded successfully');
+
+// Add logging middleware for debugging
+app.use('/api/tables/available', (req, res, next) => {
+  console.log('🔍 [DEBUG] Available tables route hit:', req.method, req.path, req.query);
+  next();
+});
 
 // Health check
 app.get('/', (req, res) => {

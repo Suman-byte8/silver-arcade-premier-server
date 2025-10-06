@@ -1,8 +1,9 @@
 // controllers/Table/table.controller.js
 const { validationResult } = require('express-validator');
-const Table = require('../../schema/Table/table.model'); // ✅ CORRECTED PATH
+const Table = require('../../schema/Table/table.model'); 
 const mongoose = require('mongoose');
 const { getIo, emitTableEvent } = require('../../utils/socketManager');
+const { emitReservationEvent } = require('../../utils/socketManager');
 
 
 // @desc    Create new table
@@ -112,7 +113,9 @@ const getTableById = async (req, res) => {
             });
         }
 
-        const table = await Table.findById(id);
+        const table = await Table.findById(id)
+            .populate('assignedTo', 'firstName lastName role')
+            .populate('assignmentHistory.assignedBy', 'firstName lastName role');
 
         if (!table) {
             return res.status(404).json({
@@ -141,8 +144,8 @@ const getTableById = async (req, res) => {
 // @route   PUT /api/tables/:id
 // @access  Admin
 const updateTable = async (req, res) => {
+    const { id } = req.params;
     try {
-        const { id } = req.params;
         const updateData = req.body;
 
         console.log("🔧 [CONTROLLER DEBUG] Raw req.params.id:", id);
@@ -175,14 +178,44 @@ const updateTable = async (req, res) => {
         console.log("🔧 [CONTROLLER DEBUG] ID passed to Mongoose:", id);
         console.log("🔧 [CONTROLLER DEBUG] Filtered Update Data passed to Mongoose:", JSON.stringify(filteredUpdateData, null, 2));
 
+        // Build atomic update with $set/$push to handle history appends safely
+        const updateOps = { $set: {}, $push: {} };
+
+        // Allow simple scalar fields directly
+        const directSetFields = [
+            'status','section','capacity','locationDescription','floor','coordinates',
+            'features','priority','isActive','specialNotes','currentGuest','lastAssignedAt',
+            'lastOccupiedAt','lastFreedAt','currentReservation'
+        ];
+        for (const key of Object.keys(filteredUpdateData)) {
+            if (key === 'historyEntry') continue; // handled below
+            if (key === 'assignmentHistory') {
+                // If full array provided, set it (use cautiously)
+                updateOps.$set.assignmentHistory = filteredUpdateData.assignmentHistory;
+                continue;
+            }
+            if (directSetFields.includes(key)) {
+                updateOps.$set[key] = filteredUpdateData[key];
+            }
+        }
+
+        // Append single history entry if provided
+        if (filteredUpdateData.historyEntry) {
+            updateOps.$push.assignmentHistory = filteredUpdateData.historyEntry;
+        }
+
+        // Clean empty operators
+        if (Object.keys(updateOps.$set).length === 0) delete updateOps.$set;
+        if (!updateOps.$push.assignmentHistory) delete updateOps.$push;
+
         const updatedTable = await Table.findByIdAndUpdate(
             id,
-            filteredUpdateData,
+            Object.keys(updateOps).length ? updateOps : filteredUpdateData,
             {
                 new: true,
                 runValidators: true,
                 context: 'query',
-                overwrite: false, // Explicitly ensure
+                overwrite: false,
             }
         );
 
@@ -196,6 +229,10 @@ const updateTable = async (req, res) => {
 
         // Emit socket event for real-time updates
         emitTableEvent('tableUpdated', updatedTable, id);
+        // If status changed to occupied/available/reserved, emit a specific event
+        if (filteredUpdateData.status) {
+            emitTableEvent('tableStatusChanged', { tableId: updatedTable._id, tableNumber: updatedTable.tableNumber, status: updatedTable.status }, id);
+        }
 
         console.log(`✅ [DEBUG] Table ${id} updated successfully. Final document:`, {
             _id: updatedTable._id,
@@ -330,8 +367,7 @@ const bulkUpdateTables = async (req, res) => {
                 _id: { $in: tableIds },
                 $or: [
                     { status: 'reserved' },
-                    { status: 'occupied' },
-                    { currentReservation: { $ne: null } }
+                    { status: 'occupied' }
                 ]
             });
 
@@ -442,15 +478,20 @@ const getTableAnalytics = async (req, res) => {
             };
         }
 
+        console.log('🔍 Analytics dateFilter:', dateFilter);
+
         // Overall statistics
-        const totalTables = await Table.countDocuments();
-        const availableTables = await Table.countDocuments({ status: 'available' });
-        const reservedTables = await Table.countDocuments({ status: 'reserved' });
-        const occupiedTables = await Table.countDocuments({ status: 'occupied' });
-        const maintenanceTables = await Table.countDocuments({ status: 'maintenance' });
+        const totalTables = await Table.countDocuments(dateFilter);
+        const availableTables = await Table.countDocuments({ ...dateFilter, status: 'available' });
+        const reservedTables = await Table.countDocuments({ ...dateFilter, status: 'reserved' });
+        const occupiedTables = await Table.countDocuments({ ...dateFilter, status: 'occupied' });
+        const maintenanceTables = await Table.countDocuments({ ...dateFilter, status: 'maintenance' });
+
+        console.log('✅ Overall stats:', { totalTables, availableTables, reservedTables, occupiedTables, maintenanceTables });
 
         // Section-wise breakdown
         const sectionStats = await Table.aggregate([
+            { $match: dateFilter },
             {
                 $group: {
                     _id: '$section',
@@ -463,55 +504,89 @@ const getTableAnalytics = async (req, res) => {
                     },
                     occupied: {
                         $sum: { $cond: [{ $eq: ['$status', 'occupied'] }, 1, 0] }
+                    },
+                    maintenance: {
+                        $sum: { $cond: [{ $eq: ['$status', 'maintenance'] }, 1, 0] }
                     }
                 }
-            }
+            },
+            { $sort: { count: -1 } }
         ]);
 
-        // Capacity statistics
+        console.log('✅ Section stats:', sectionStats);
+
+        // Capacity distribution
         const capacityStats = await Table.aggregate([
+            { $match: dateFilter },
             {
                 $group: {
                     _id: '$capacity',
                     count: { $sum: 1 },
-                    utilization: {
-                        $avg: {
-                            $cond: [
-                                { $in: ['$status', ['reserved', 'occupied']] },
-                                1,
-                                0
-                            ]
-                        }
+                    available: {
+                        $sum: { $cond: [{ $eq: ['$status', 'available'] }, 1, 0] }
                     }
                 }
             },
             { $sort: { _id: 1 } }
         ]);
 
-        // Recent activity (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        console.log('✅ Capacity stats:', capacityStats);
 
-        const recentActivity = await Table.aggregate([
-            {
-                $match: {
-                    updatedAt: { $gte: thirtyDaysAgo }
-                }
-            },
-            {
-                $group: {
-                    _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$updatedAt' } },
-                        status: '$status'
+        // Utilization trends (if date range provided)
+        let utilizationTrends = [];
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+            if (daysDiff <= 30) { // Only calculate trends for reasonable date ranges
+                utilizationTrends = await Table.aggregate([
+                    {
+                        $match: {
+                            createdAt: { $gte: start, $lte: end }
+                        }
                     },
-                    count: { $sum: 1 }
-                }
-            },
-            {
-                $sort: { '_id.date': -1 }
-            },
-            { $limit: 30 }
-        ]);
+                    {
+                        $group: {
+                            _id: {
+                                $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+                            },
+                            total: { $sum: 1 },
+                            available: {
+                                $sum: { $cond: [{ $eq: ['$status', 'available'] }, 1, 0] }
+                            },
+                            reserved: {
+                                $sum: { $cond: [{ $eq: ['$status', 'reserved'] }, 1, 0] }
+                            },
+                            occupied: {
+                                $sum: { $cond: [{ $eq: ['$status', 'occupied'] }, 1, 0] }
+                            }
+                        }
+                    },
+                    {
+                        $project: {
+                            date: '$_id',
+                            utilizationRate: {
+                                $multiply: [
+                                    { $divide: [{ $add: ['$reserved', '$occupied'] }, '$total'] },
+                                    100
+                                ]
+                            },
+                            total: 1,
+                            available: 1,
+                            reserved: 1,
+                            occupied: 1
+                        }
+                    },
+                    { $sort: { date: 1 } }
+                ]);
+            }
+        }
+
+        // Calculate utilization rate
+        const totalActiveTables = totalTables - maintenanceTables;
+        const utilizationRate = totalActiveTables > 0 ?
+            ((reservedTables + occupiedTables) / totalActiveTables * 100).toFixed(2) : 0;
 
         res.status(200).json({
             success: true,
@@ -522,19 +597,22 @@ const getTableAnalytics = async (req, res) => {
                     reserved: reservedTables,
                     occupied: occupiedTables,
                     maintenance: maintenanceTables,
-                    utilizationRate: totalTables > 0 ? ((reservedTables + occupiedTables) / totalTables * 100).toFixed(2) : 0
+                    utilizationRate: parseFloat(utilizationRate)
                 },
                 sectionBreakdown: sectionStats,
-                capacityBreakdown: capacityStats,
-                recentActivity: recentActivity,
-                generatedAt: new Date().toISOString()
+                capacityDistribution: capacityStats,
+                utilizationTrends: utilizationTrends,
+                generatedAt: new Date().toISOString(),
+                dateRange: startDate && endDate ? { startDate, endDate } : null
             }
         });
     } catch (error) {
-        console.error('Get Table Analytics Error:', error);
+        console.error('❌ Get Table Analytics Error:', error);
+        console.error('❌ Error stack:', error.stack);
         res.status(500).json({
             success: false,
             error: 'Server Error during analytics generation',
+            details: error.message
         });
     }
 };
@@ -544,44 +622,12 @@ const getTableAnalytics = async (req, res) => {
 // @access  Public/Admin
 const getAvailableTables = async (req, res) => {
     try {
-        const { capacity, section, features, date, time } = req.query;
+        console.log('🔍 [DEBUG] getAvailableTables called with query:', req.query);
 
-        let filter = {
-            status: 'available',
-            // Don't assign tables that are in maintenance
-            status: { $ne: 'maintenance' }
-        };
-
-        if (capacity) {
-            filter.capacity = { $gte: parseInt(capacity) };
-        }
-
-        if (section) {
-            filter.section = section;
-        }
-
-        if (features) {
-            const featureArray = features.split(',');
-            filter.features = { $all: featureArray };
-        }
-
-        // If date and time are provided, check for existing reservations
-        if (date && time) {
-            const Reservation = require('../../schema/Reservation/reservation.model');
-
-            const conflictingReservations = await Reservation.find({
-                reservationDate: new Date(date),
-                reservationTime: time,
-                status: { $in: ['confirmed', 'seated'] }
-            });
-
-            const reservedTableIds = conflictingReservations.map(r => r.tableId).filter(Boolean);
-            filter._id = { $nin: reservedTableIds };
-        }
-
-        const availableTables = await Table.find(filter)
+        // Simplified version for debugging
+        const availableTables = await Table.find({ status: 'available' })
             .sort({ section: 1, tableNumber: 1 })
-            .limit(50); // Limit results for performance
+            .limit(50);
 
         console.log(`✅ Found ${availableTables.length} available tables`);
 
@@ -591,11 +637,99 @@ const getAvailableTables = async (req, res) => {
             data: availableTables,
         });
     } catch (error) {
-        console.error('Get Available Tables Error:', error);
+        console.error('❌ Get Available Tables Error:', error.message);
+        console.error('❌ Error stack:', error.stack);
         res.status(500).json({
             success: false,
-            error: 'Server Error',
+            error: error.message || 'Server Error',
         });
+    }
+};
+
+// @desc    Update table status and manage assignment lifecycle
+// @route   PUT /api/tables/:id/status
+// @access  Admin
+const updateTableStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, reservationId, reservationType, guestName, assignedBy, notes, reservationStatus, assignedAt } = req.body || {};
+
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid Table ID format' });
+        }
+        if (!status) {
+            return res.status(400).json({ success: false, message: 'Status is required' });
+        }
+
+        const table = await Table.findById(id);
+        if (!table) {
+            return res.status(404).json({ success: false, message: 'Table not found' });
+        }
+
+        const now = new Date();
+
+        // Prevent reserving a busy table
+        if (status === 'reserved' && (table.status === 'reserved' || table.status === 'occupied')) {
+            return res.status(409).json({ success: false, message: `Table ${table.tableNumber} is already ${table.status}`, errorCode: 'TABLE_NOT_AVAILABLE' });
+        }
+
+        // Transition handling
+        if (status === 'reserved') {
+            table.status = 'reserved';
+            table.lastAssignedAt = now;
+            table.currentReservation = {
+                reservationId: reservationId || table.currentReservation?.reservationId || null,
+                reservationType: reservationType || table.currentReservation?.reservationType || 'restaurant',
+                guestName: guestName || table.currentReservation?.guestName || table.currentGuest || null,
+                assignedBy: assignedBy || table.currentReservation?.assignedBy || null
+            };
+            if (guestName) table.currentGuest = guestName;
+            // Set assignedTo from assignedBy if available
+            if (assignedBy) {
+                table.assignedTo = assignedBy;
+            }
+        } else if (status === 'occupied') {
+            table.status = 'occupied';
+            table.lastOccupiedAt = now;
+        } else if (status === 'available') {
+            // Free table and append assignment history if there was an active reservation
+            const active = table.currentReservation || {};
+            if (active && (active.reservationId || active.guestName)) {
+                table.assignmentHistory.push({
+                    reservationId: active.reservationId || null,
+                    reservationType: active.reservationType || 'restaurant',
+                    guestName: active.guestName || table.currentGuest || 'Guest',
+                    assignedAt: assignedAt ? new Date(assignedAt) : (table.lastAssignedAt || now),
+                    freedAt: now,
+                    assignedBy: active.assignedBy || assignedBy || null,
+                    notes: notes || undefined
+                });
+            }
+            table.status = 'available';
+            table.lastFreedAt = now;
+            table.currentReservation = { reservationId: null, reservationType: 'restaurant', guestName: null, assignedBy: null };
+            table.currentGuest = null;
+        } else if (['dirty','maintenance','out_of_service'].includes(status)) {
+            table.status = status;
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid status transition' });
+        }
+
+        await table.save();
+
+        // Emit socket events for table
+        emitTableEvent('tableUpdated', table, id);
+        emitTableEvent('tableStatusChanged', { tableId: table._id, tableNumber: table.tableNumber, status: table.status }, id);
+
+        // Optionally propagate reservation status change
+        if (reservationId && reservationStatus) {
+            emitReservationEvent('reservationStatusChanged', { id: reservationId, status: reservationStatus }, reservationId);
+        }
+
+        return res.status(200).json({ success: true, data: table });
+    } catch (error) {
+        console.error('Update Table Status Error:', error);
+        return res.status(500).json({ success: false, message: 'Server Error during status update' });
     }
 };
 
@@ -734,6 +868,45 @@ const getTableMaintenanceHistory = async (req, res) => {
     }
 };
 
+// @desc    Reset all tables to available status
+// @route   PUT /api/tables/reset-all
+// @access  Admin
+const resetAllTables = async (req, res) => {
+    try {
+        const now = new Date();
+
+        // Update all tables to available status, clearing reservations and assignments
+        const result = await Table.updateMany(
+            {}, // Update all tables
+            {
+                status: 'available',
+                assignedTo: null,
+                currentReservation: { reservationId: null, reservationType: 'restaurant', guestName: null, assignedBy: null },
+                currentGuest: null,
+                lastFreedAt: now,
+                updatedAt: now
+            }
+        );
+
+        // Emit socket event for real-time updates
+        emitTableEvent('tablesReset', { count: result.modifiedCount });
+
+        console.log(`✅ Reset ${result.modifiedCount} tables to available status`);
+
+        res.status(200).json({
+            success: true,
+            message: `${result.modifiedCount} tables reset to available status`,
+            modifiedCount: result.modifiedCount,
+        });
+    } catch (error) {
+        console.error('Reset All Tables Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Server Error during table reset',
+        });
+    }
+};
+
 // @desc    Export tables data
 // @route   GET /api/tables/export
 // @access  Admin
@@ -792,9 +965,12 @@ module.exports = {
     getAllTables,
     getTableById,
     updateTable,
+    // Status-specific transitions
+    updateTableStatus,
     deleteTable,
     bulkUpdateTables,
     bulkDeleteTables,
+    resetAllTables,
     getTableAnalytics,
     getAvailableTables,
     transferTable,
