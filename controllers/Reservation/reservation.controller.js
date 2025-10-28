@@ -21,11 +21,11 @@ const modelSelector = (typeRaw) => {
 ==================================================== */
 exports.createAccommodationBooking = async (req, res) => {
   try {
-    const { arrivalDate, departureDate, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC } = req.body;
-    if (!arrivalDate || !departureDate || !rooms || !guestInfo) {
+    const { arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC } = req.body;
+    if (!arrivalDate || !departureDate || !checkInTime || !checkOutTime || !nights || !rooms || !guestInfo) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
-    const doc = await Accommodation.create({ arrivalDate, departureDate, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC });
+    const doc = await Accommodation.create({ arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC });
 
     await sendAcknowledgementEmail(doc, "Accommodation");
 
