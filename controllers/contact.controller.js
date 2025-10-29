@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+// Import existing transporter
+const transporter = require('../config/mail/transporter');
 
 // Send contact form message via email
 const sendContactMessage = async (req, res) => {
@@ -42,19 +44,13 @@ const sendContactMessage = async (req, res) => {
       </div>
     `;
 
-    // Create transporter using existing email config
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
+    // Use the imported transporter
 
     const mailOptions = {
-      from: {email},
+      from: process.env.EMAIL_USER, // Must be the authenticated Gmail account
+      replyTo: email, // Set reply-to as the user's email so replies go to them
       to: process.env.EMAIL_USER,
-      subject: 'New Contact Form Message - Silver Arcade Premier',
+      subject: `New Contact Form Message from ${name} (${email}) - Silver Arcade Premier`,
       html: contactEmailContent
     };
 
