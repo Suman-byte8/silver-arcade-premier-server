@@ -81,7 +81,7 @@ app.get('/', (req, res) => {
 
 // For local development
 if (require.main === module) {
-  const port = process.env.PORT || 5000;
+  const port = process.env.PORT;
   connectDB()
     .then(() => {
       server.listen(port, () => {
