@@ -5,7 +5,7 @@ const Table = require("../../schema/Table/table.model");
 
 const sendAcknowledgementEmail = require("../../config/mail/reservation/sendAcknowledgementEmail");
 const sendConfirmationEmail = require("../../config/mail/reservation/sendConfirmationEmail");
-const { emitReservationEvent, emitTableEvent } = require("../../utils/socketManager");
+const { emitTableEvent } = require("../../utils/socketManager");
 
 // Helper → select correct model
 const modelSelector = (typeRaw) => {
@@ -21,20 +21,74 @@ const modelSelector = (typeRaw) => {
 ==================================================== */
 exports.createAccommodationBooking = async (req, res) => {
   try {
-    const { arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC } = req.body;
-    if (!arrivalDate || !departureDate || !checkInTime || !checkOutTime || !nights || !rooms || !guestInfo) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    const { 
+      arrivalDate, 
+      departureDate, 
+      checkInTime, 
+      checkOutTime, 
+      nights, 
+      selectedRoomTypes, 
+      totalAdults, 
+      totalChildren, 
+      specialRequests, 
+      guestInfo 
+    } = req.body;
+
+    // Validate required fields
+    if (!arrivalDate || !departureDate || !checkInTime || !checkOutTime || !nights || !selectedRoomTypes || !guestInfo) {
+      console.log('Missing required fields:', { body: req.body });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields",
+        details: {
+          arrivalDate: !arrivalDate,
+          departureDate: !departureDate,
+          checkInTime: !checkInTime,
+          checkOutTime: !checkOutTime,
+          nights: !nights,
+          selectedRoomTypes: !selectedRoomTypes,
+          guestInfo: !guestInfo
+        }
+      });
     }
-    const doc = await Accommodation.create({ arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC });
+
+    // Validate room types
+    if (!Array.isArray(selectedRoomTypes) || selectedRoomTypes.length === 0 || 
+        !selectedRoomTypes.every(room => room.type && room.count > 0)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid room types. Each room must have a type and count > 0" 
+      });
+    }
+
+    // Create the accommodation booking
+    const doc = await Accommodation.create({ 
+      typeOfReservation: 'accommodation',
+      arrivalDate, 
+      departureDate, 
+      checkInTime, 
+      checkOutTime, 
+      nights, 
+      selectedRoomTypes,
+      totalAdults: Math.max(1, totalAdults || 1),
+      totalChildren: Math.max(0, totalChildren || 0),
+      specialRequests: specialRequests || '',
+      guestInfo: {
+        name: guestInfo.name,
+        phoneNumber: guestInfo.phoneNumber,
+        email: guestInfo.email
+      }
+    });
 
     await sendAcknowledgementEmail(doc, "Accommodation");
-
-    // Emit socket event for real-time updates
-    emitReservationEvent('reservationCreated', doc);
-
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    console.error('Accommodation booking error:', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: err.message,
+      error: err 
+    });
   }
 };
 
@@ -47,9 +101,6 @@ exports.createRestaurantReservation = async (req, res) => {
     const doc = await RestaurantReservation.create({ typeOfReservation, noOfDiners, date, timeSlot, guestInfo, specialRequests, additionalDetails, agreeToTnC });
 
     await sendAcknowledgementEmail(doc, "Restaurant");
-
-    // Emit socket event for real-time updates
-    emitReservationEvent('reservationCreated', doc);
 
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
@@ -67,9 +118,6 @@ exports.createMeetingReservation = async (req, res) => {
     const doc = await MeetingOrWeddingReservation.create({ typeOfReservation, reservationDate, reservationEndDate, numberOfRooms, numberOfGuests, additionalDetails, guestInfo, agreeToTnC });
 
     await sendAcknowledgementEmail(doc, "Meeting");
-
-    // Emit socket event for real-time updates
-    emitReservationEvent('reservationCreated', doc);
 
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
@@ -163,7 +211,7 @@ exports.updateStatus = async (req, res) => {
           table.lastAssignedAt = new Date();
           await table.save();
 
-          // Emit socket events for table update
+          // Emit table updates
           emitTableEvent('tableUpdated', table, table._id);
           emitTableEvent('tableStatusChanged', { tableId: table._id, tableNumber: table.tableNumber, status: table.status }, table._id);
         } else {
@@ -171,34 +219,6 @@ exports.updateStatus = async (req, res) => {
         }
       }
     }
-
-    if (status.toLowerCase() === "cancelled") {
-      // Free assigned tables
-      const assignedTables = await Table.find({ 'currentReservation.reservationId': updated._id });
-      for (const tableDoc of assignedTables) {
-        tableDoc.status = 'available';
-        tableDoc.currentReservation = { reservationId: null, reservationType: null, guestName: null, assignedBy: null };
-        tableDoc.currentGuest = null;
-        tableDoc.lastFreedAt = new Date();
-        tableDoc.assignmentHistory.push({
-          reservationId: updated._id,
-          reservationType: type,
-          guestName: updated.guestInfo.name,
-          assignedAt: tableDoc.lastAssignedAt || new Date(),
-          freedAt: new Date(),
-          assignedBy: req.user ? req.user._id : null,
-          notes: 'Reservation cancelled'
-        });
-        await tableDoc.save();
-
-        // Emit socket events for table update
-        emitTableEvent('tableUpdated', tableDoc, tableDoc._id);
-        emitTableEvent('tableStatusChanged', { tableId: tableDoc._id, tableNumber: tableDoc.tableNumber, status: tableDoc.status }, tableDoc._id);
-      }
-    }
-
-    // Emit socket event for real-time updates
-    emitReservationEvent('reservationStatusChanged', { id, status, updated }, id);
 
     return res.json({ success: true, data: updated });
   } catch (err) {
@@ -215,9 +235,6 @@ exports.updateReservation = async (req, res) => {
 
     const updated = await Model.findByIdAndUpdate(id, updatedData, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ success: false, message: "Not found" });
-
-    // Emit socket event for real-time updates (optional, depending on requirements)
-    // emitReservationEvent('reservationUpdated', { id, updatedData, updated }, id);
 
     return res.json({ success: true, data: updated });
   } catch (err) {
@@ -237,9 +254,6 @@ exports.deleteReservation = async (req, res) => {
 
     const deleted = await Model.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ success:false, message:"Not found" });
-
-    // Emit socket event for real-time updates
-    emitReservationEvent('reservationDeleted', { id, deleted }, id);
 
     return res.json({ success: true, message: "Deleted" });
   } catch (err) {

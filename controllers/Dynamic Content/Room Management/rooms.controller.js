@@ -1,6 +1,8 @@
 const cloudinary = require('../../../config/cloudinary')
 const streamifier = require('streamifier');
 const Room = require('../../../schema/rooms.model');
+const { emitRoomEvent } = require('../../../utils/socketManager');
+
 // add rooms
 async function addRooms(req, res) {
     try {
@@ -78,6 +80,10 @@ async function addRooms(req, res) {
             heroImage: heroImageUrl
         });
         await newRoom.save();
+        
+        // Emit socket event for new room
+        emitRoomEvent('roomCreated', newRoom._id, newRoom);
+
         res.status(201).json({
             success: true,
             message: 'Room added successfully',
@@ -185,6 +191,17 @@ async function updateRoomDetails(req, res) {
         }
         
         await room.save();
+
+        // Emit socket event for room update
+        emitRoomEvent('roomUpdated', roomId, room);
+        if (room.roomStatus) {
+            emitRoomEvent('roomBookingStatusChanged', roomId, {
+                roomId: room._id,
+                status: room.roomStatus,
+                bookingId: room.currentBooking
+            });
+        }
+
         res.status(200).json({
             success: true,
             message: 'Room updated successfully',
@@ -193,6 +210,42 @@ async function updateRoomDetails(req, res) {
     } catch (error) {
         console.error('Error updating room:', error);
         res.status(500).json({ message: 'Server error while updating room' });
+    }
+}
+
+// add updateRoomStatus function
+async function updateRoomStatus(req, res) {
+    try {
+        const { roomId } = req.params;
+        const { roomStatus } = req.body;
+
+        if (!['available', 'booked', 'maintenance'].includes(roomStatus)) {
+            return res.status(400).json({ message: 'Invalid room status' });
+        }
+
+        const room = await Room.findById(roomId);
+        if (!room) {
+            return res.status(404).json({ message: 'Room not found' });
+        }
+
+        room.roomStatus = roomStatus;
+        await room.save();
+
+        // Emit socket event for room status update
+        emitRoomEvent('roomBookingStatusChanged', roomId, {
+            roomId: room._id,
+            status: roomStatus,
+            bookingId: room.currentBooking
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Room status updated successfully',
+            room
+        });
+    } catch (error) {
+        console.error('Error updating room status:', error);
+        res.status(500).json({ message: 'Server error while updating room status' });
     }
 }
 
@@ -236,6 +289,9 @@ async function deleteRoom(req, res) {
         if (!room) {
             return res.status(404).json({ message: 'Room not found' });
         }
+
+        // Emit socket event for room deletion
+        emitRoomEvent('roomDeleted', roomId, { roomId });
         
         res.status(200).json({
             success: true,
@@ -274,5 +330,6 @@ module.exports = {
     updateRoomDetails,
     getRooms,
     deleteRoom,
-    getRoomById
+    getRoomById,
+    updateRoomStatus,
 };
