@@ -213,6 +213,42 @@ async function updateRoomDetails(req, res) {
     }
 }
 
+// add updateRoomStatus function
+async function updateRoomStatus(req, res) {
+    try {
+        const { roomId } = req.params;
+        const { roomStatus } = req.body;
+
+        if (!['available', 'booked', 'maintenance'].includes(roomStatus)) {
+            return res.status(400).json({ message: 'Invalid room status' });
+        }
+
+        const room = await Room.findById(roomId);
+        if (!room) {
+            return res.status(404).json({ message: 'Room not found' });
+        }
+
+        room.roomStatus = roomStatus;
+        await room.save();
+
+        // Emit socket event for room status update
+        emitRoomEvent('roomBookingStatusChanged', roomId, {
+            roomId: room._id,
+            status: roomStatus,
+            bookingId: room.currentBooking
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Room status updated successfully',
+            room
+        });
+    } catch (error) {
+        console.error('Error updating room status:', error);
+        res.status(500).json({ message: 'Server error while updating room status' });
+    }
+}
+
 // get all rooms
 async function getRooms(req, res) {
     try {
@@ -294,5 +330,6 @@ module.exports = {
     updateRoomDetails,
     getRooms,
     deleteRoom,
-    getRoomById
+    getRoomById,
+    updateRoomStatus,
 };
