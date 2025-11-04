@@ -5,8 +5,8 @@ const { upload, handleMulterError } = require('../../middlewares/uploadMiddlewar
 
 // routes for hero banner
 const { getHeroBanner, addHeroBanner, updateHeroBanner, deleteHeroBanner } = require('../../controllers/Dynamic Content/Home Page Controller/heroBanner.controller');
-// get hero banner (accessible to both admin and user)
-router.get('/hero-banner', protect, getHeroBanner);
+// get hero banner (public viewing)
+router.get('/hero-banner', getHeroBanner);
 // add hero banner (admin only)
 router.post('/add-hero-banner', protect, authorize('admin'), upload.single('image'), handleMulterError, addHeroBanner);
 // update hero banner (admin only)
@@ -20,8 +20,8 @@ const { addDistinctive, getDistinctives, updateDistinctive, deleteDistinctive } 
 
 // Create
 router.post("/add-distinctive", protect, authorize("admin"), upload.array("images"), handleMulterError, addDistinctive);
-// Get all
-router.get("/distinctives", protect, getDistinctives);
+// Get all (public viewing)
+router.get("/distinctives", getDistinctives);
 // Update
 router.put("/distinctive/:id", protect, authorize("admin"), updateDistinctive);
 // Delete
@@ -36,15 +36,15 @@ router.post('/add-curated-offer', protect, authorize('admin'), upload.single('im
 router.put('/update-curated-offer/:id', protect, authorize('admin'), upload.single('image'), handleMulterError, updateOffers);
 // Delete Curated Offers
 router.delete('/delete-curated-offer/:id', protect, authorize('admin'), deleteOffers);
-// Get Curated Offers
-router.get('/get-curated-offers', protect, getOffers);
+// Get Curated Offers (public viewing)
+router.get('/get-curated-offers', getOffers);
 
 // routes for footer links
 const { addFooterLinks, getFooterLinks, updateFooterLink, deleteFooterLink } = require('../../controllers/Dynamic Content/Home Page Controller/footer.controller');
 // Add Footer Links
 router.post('/add-footer-link', protect, authorize('admin'), addFooterLinks);
-// Get Footer Links
-router.get('/get-footer-links', protect, getFooterLinks);
+// Get Footer Links (public viewing)
+router.get('/get-footer-links', getFooterLinks);
 // Update Footer Link
 router.put('/update-footer-link/:id', protect, authorize('admin'), updateFooterLink);
 // Delete Footer Link
@@ -58,8 +58,8 @@ router.post('/add-membership-block', protect, authorize('admin'), upload.single(
 router.put('/update-membership-block/:id', protect, authorize('admin'), upload.single('image'), handleMulterError, updateMembershipBlock);
 // Delete Membership Block
 router.delete('/delete-membership-block/:id', protect, authorize('admin'), deleteMembershipBlock);
-// Get Membership Blocks
-router.get('/get-membership-blocks', protect, getMembershipBlocks);
+// Get Membership Blocks (public viewing)
+router.get('/get-membership-blocks', getMembershipBlocks);
 
 
 // routes for nav links
@@ -70,8 +70,8 @@ router.post('/add-nav-link', protect, authorize('admin'), addNavLink);
 router.put('/update-nav-link/:id', protect, authorize('admin'), updateNavLink);
 // Delete Nav Link
 router.delete('/delete-nav-link/:id', protect, authorize('admin'), deleteNavLink);
-// Get Nav Links
-router.get('/get-nav-links', protect, getNavLinks);
+// Get Nav Links (public viewing)
+router.get('/get-nav-links', getNavLinks);
 
 
 

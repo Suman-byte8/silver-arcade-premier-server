@@ -10,7 +10,7 @@ const router = express.Router();
 
 
 
-// --- About Page Route ---
+// --- About Page Route (public viewing) ---
 router.get('/', aboutController.getAboutPage);
 
 // --- About Us Section ---

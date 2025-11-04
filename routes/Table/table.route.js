@@ -34,7 +34,7 @@ router
 // Reset all tables route (must be before :id routes to avoid conflicts)
 router.put('/reset-all', protect, authorize('admin'), tableController.resetAllTables);
 
-// Available tables route (public access for reservations)
+// Available tables route (public viewing for reservations)
 router.get('/available', tableController.getAvailableTables);
 
 // Export route

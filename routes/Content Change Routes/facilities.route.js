@@ -17,11 +17,11 @@ const validateFacility = [
   check('description', 'Description is required').not().isEmpty()
 ];
 
-// Get all facilities (public)
-router.get('/get-facilities', protect, getFacilities);
+// Get all facilities (public viewing)
+router.get('/get-facilities', getFacilities);
 
-// Get facility by ID (public)
-router.get('/get-facility/:id',protect, getFacilityById);
+// Get facility by ID (public viewing)
+router.get('/get-facility/:id', getFacilityById);
 
 // Admin routes - require authentication and admin authorization
 router.post('/admin/add-facility', 
