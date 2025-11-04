@@ -5,11 +5,6 @@ const roomTypeSchema = new mongoose.Schema({
   count: { type: Number, required: true, min: 1 }
 });
 
-const roomSchema = new mongoose.Schema({
-  adults: { type: Number, required: true, min: 1, max: 4 },
-  children: { type: Number, required: true, min: 0, max: 4 }
-});
-
 const schema = new mongoose.Schema({
   typeOfReservation: { type: String, default: "accommodation" },
   arrivalDate: { type: Date, required: true },
@@ -17,7 +12,7 @@ const schema = new mongoose.Schema({
   checkInTime: { type: String, required: true },
   checkOutTime: { type: String, required: true },
   nights: { type: Number, required: true },
-  selectedRoomTypes: [roomTypeSchema], // Add selected room types
+  selectedRoomTypes: [roomTypeSchema],
   totalAdults: { type: Number, required: true, min: 1 },
   totalChildren: { type: Number, required: true, min: 0 },
   guestInfo: {
@@ -25,6 +20,7 @@ const schema = new mongoose.Schema({
     phoneNumber: { type: String, required: true },
     email: { type: String, required: true }
   },
+  specialRequests: { type: String, default: "" },
   status: {
     type: String,
     enum: ["pending", "confirmed", "cancelled"],
@@ -32,7 +28,7 @@ const schema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Indexes
+// Indexes for common queries
 schema.index({ status: 1, createdAt: -1 });
 schema.index({ typeOfReservation: 1 });
 schema.index({ arrivalDate: -1 });

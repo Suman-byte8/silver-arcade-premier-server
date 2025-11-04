@@ -1,6 +1,8 @@
 const cloudinary = require('../../../config/cloudinary')
 const streamifier = require('streamifier');
 const Room = require('../../../schema/rooms.model');
+const { emitRoomEvent } = require('../../../utils/socketManager');
+
 // add rooms
 async function addRooms(req, res) {
     try {
@@ -78,6 +80,10 @@ async function addRooms(req, res) {
             heroImage: heroImageUrl
         });
         await newRoom.save();
+        
+        // Emit socket event for new room
+        emitRoomEvent('roomCreated', newRoom._id, newRoom);
+
         res.status(201).json({
             success: true,
             message: 'Room added successfully',
@@ -185,6 +191,17 @@ async function updateRoomDetails(req, res) {
         }
         
         await room.save();
+
+        // Emit socket event for room update
+        emitRoomEvent('roomUpdated', roomId, room);
+        if (room.roomStatus) {
+            emitRoomEvent('roomBookingStatusChanged', roomId, {
+                roomId: room._id,
+                status: room.roomStatus,
+                bookingId: room.currentBooking
+            });
+        }
+
         res.status(200).json({
             success: true,
             message: 'Room updated successfully',
@@ -236,6 +253,9 @@ async function deleteRoom(req, res) {
         if (!room) {
             return res.status(404).json({ message: 'Room not found' });
         }
+
+        // Emit socket event for room deletion
+        emitRoomEvent('roomDeleted', roomId, { roomId });
         
         res.status(200).json({
             success: true,
