@@ -11,7 +11,7 @@ router.post("/accommodation", protect, controller.createAccommodationBooking);
 router.post("/restaurant", protect, controller.createRestaurantReservation);
 router.post("/meeting", protect,  controller.createMeetingReservation);
 
-// Allow users to fetch their individual booking by type+id
+// Allow users to fetch their individual booking by type+id (public viewing)
 router.get("/:type/:id", controller.getById);
 
 // ===================

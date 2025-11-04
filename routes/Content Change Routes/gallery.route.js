@@ -5,7 +5,7 @@ const { protect, authorize } = require('../../middlewares/authMiddleware.js');
 
 const router = express.Router();
 
-// Get gallery images, optionally filtered by tab
+// Get gallery images, optionally filtered by tab (public viewing)
 router.get('/', galleryController.getGalleryImages);
 
 // Admin routes for managing gallery images
