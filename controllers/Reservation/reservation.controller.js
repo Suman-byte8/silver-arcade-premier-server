@@ -2,6 +2,8 @@ const Accommodation = require("../../schema/Reservation/accommodation.model");
 const RestaurantReservation = require("../../schema/Reservation/restaurantReservation.model");
 const MeetingOrWeddingReservation = require("../../schema/Reservation/meetingOrWeddingReservation.model");
 const Table = require("../../schema/Table/table.model");
+const Room = require("../../schema/rooms.model");
+const Reservation = require("../../schema/Reservation/reservation.model");
 
 const sendAcknowledgementEmail = require("../../config/mail/reservation/sendAcknowledgementEmail");
 const sendConfirmationEmail = require("../../config/mail/reservation/sendConfirmationEmail");
@@ -13,6 +15,7 @@ const modelSelector = (typeRaw) => {
   if (type === "accommodation") return Accommodation;
   if (type === "restaurant") return RestaurantReservation;
   if (type === "meeting") return MeetingOrWeddingReservation;
+  if (type === "room") return Reservation;
   return null;
 };
 
@@ -21,11 +24,64 @@ const modelSelector = (typeRaw) => {
 ==================================================== */
 exports.createAccommodationBooking = async (req, res) => {
   try {
-    const { arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC } = req.body;
-    if (!arrivalDate || !departureDate || !checkInTime || !checkOutTime || !nights || !rooms || !guestInfo) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    const { 
+      arrivalDate, 
+      departureDate, 
+      checkInTime, 
+      checkOutTime, 
+      nights, 
+      selectedRoomTypes, 
+      totalAdults, 
+      totalChildren, 
+      specialRequests, 
+      guestInfo 
+    } = req.body;
+
+    // Validate required fields
+    if (!arrivalDate || !departureDate || !checkInTime || !checkOutTime || !nights || !selectedRoomTypes || !guestInfo) {
+      console.log('Missing required fields:', { body: req.body });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields",
+        details: {
+          arrivalDate: !arrivalDate,
+          departureDate: !departureDate,
+          checkInTime: !checkInTime,
+          checkOutTime: !checkOutTime,
+          nights: !nights,
+          selectedRoomTypes: !selectedRoomTypes,
+          guestInfo: !guestInfo
+        }
+      });
     }
-    const doc = await Accommodation.create({ arrivalDate, departureDate, checkInTime, checkOutTime, nights, rooms, totalAdults, totalChildren, specialRequests, guestInfo, agreeToTnC });
+
+    // Validate room types
+    if (!Array.isArray(selectedRoomTypes) || selectedRoomTypes.length === 0 || 
+        !selectedRoomTypes.every(room => room.type && room.count > 0)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid room types. Each room must have a type and count > 0" 
+      });
+    }
+
+    // Create the accommodation booking
+    const doc = await Accommodation.create({ 
+      typeOfReservation: 'accommodation',
+      arrivalDate, 
+      departureDate, 
+      checkInTime, 
+      checkOutTime, 
+      nights, 
+      selectedRoomTypes,
+      totalAdults: Math.max(1, totalAdults || 1),
+      totalChildren: Math.max(0, totalChildren || 0),
+      specialRequests: specialRequests || '',
+      guestInfo: {
+        name: guestInfo.name,
+        phoneNumber: guestInfo.phoneNumber,
+        email: guestInfo.email
+      }
+    });
 
     await sendAcknowledgementEmail(doc, "Accommodation");
 
@@ -34,7 +90,12 @@ exports.createAccommodationBooking = async (req, res) => {
 
     return res.status(201).json({ success: true, data: doc });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    console.error('Accommodation booking error:', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: err.message,
+      error: err 
+    });
   }
 };
 
@@ -72,6 +133,57 @@ exports.createMeetingReservation = async (req, res) => {
     emitReservationEvent('reservationCreated', doc);
 
     return res.status(201).json({ success: true, data: doc });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.createRoomBooking = async (req, res) => {
+  try {
+    const { roomId, checkIn, checkOut, numberOfGuests, specialRequests, guestInfo } = req.body;
+    
+    // Verify room exists and is available
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+    if (room.roomStatus !== 'available') {
+      return res.status(400).json({ success: false, message: "Room is not available" });
+    }
+
+    // Calculate total price (you may want to adjust this based on your pricing logic)
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    const totalPrice = room.roomPrice * nights;
+
+    // Create reservation
+    const reservation = await Reservation.create({
+      room: roomId,
+      guest: req.user._id, // Assuming you have user auth middleware
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      totalPrice,
+      numberOfGuests,
+      specialRequests,
+      guestInfo
+    });
+
+    // Update room status
+    room.roomStatus = 'booked';
+    room.currentBooking = reservation._id;
+    await room.save();
+
+    // Send email confirmation
+    await sendAcknowledgementEmail(reservation, "Room");
+
+    // Emit socket event
+    emitReservationEvent('roomReservationCreated', reservation);
+
+    return res.status(201).json({ 
+      success: true, 
+      data: reservation
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -127,6 +239,19 @@ exports.getById = async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, message: "Not found" });
 
     return res.json({ success: true, data: doc });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getRoomBookings = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const bookings = await Reservation.find({ room: roomId })
+      .populate('guest', 'name email')
+      .sort({ checkIn: -1 });
+    
+    return res.json({ success: true, data: bookings });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

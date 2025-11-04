@@ -39,6 +39,18 @@ function init(server) {
       console.log(`User ${socket.id} left reservation room: reservation_${reservationId}`);
     });
 
+    // Join room for room booking updates
+    socket.on('joinRoomBookingRoom', (roomId) => {
+      socket.join(`room_${roomId}`);
+      console.log(`User ${socket.id} joined room booking room: room_${roomId}`);
+    });
+
+    // Leave room for room booking updates
+    socket.on('leaveRoomBookingRoom', (roomId) => {
+      socket.leave(`room_${roomId}`);
+      console.log(`User ${socket.id} left room booking room: room_${roomId}`);
+    });
+
     // Handle table status change
     socket.on('tableStatusChange', (data) => {
       console.log('Table status change requested:', data);
@@ -61,6 +73,13 @@ function init(server) {
       // Emit to all clients in the reservation room AND to all connected clients
       io.to(`reservation_${data.reservationId}`).emit('reservationStatusChanged', data);
       io.emit('reservationStatusChanged', data); // Broadcast to all clients
+    });
+
+    // Handle room booking status change
+    socket.on('roomBookingStatusChange', (data) => {
+      console.log('Room booking status change:', data);
+      io.to(`room_${data.roomId}`).emit('roomBookingStatusChanged', data);
+      io.emit('roomBookingStatusChanged', data);
     });
 
     socket.on('disconnect', () => {
@@ -102,6 +121,17 @@ function init(server) {
     socket.on('reservationDeleted', (data) => {
       console.log('Reservation deleted in default namespace:', data);
       defaultNamespace.emit('reservationDeleted', data);
+    });
+
+    // Emit all room booking events to default namespace
+    socket.on('roomBooked', (data) => {
+      console.log('Room booked in default namespace:', data);
+      defaultNamespace.emit('roomBooked', data);
+    });
+
+    socket.on('roomBookingCancelled', (data) => {
+      console.log('Room booking cancelled in default namespace:', data);
+      defaultNamespace.emit('roomBookingCancelled', data);
     });
   });
 

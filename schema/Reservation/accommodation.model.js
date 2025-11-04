@@ -1,5 +1,10 @@
 const mongoose = require("mongoose");
 
+const roomTypeSchema = new mongoose.Schema({
+  type: { type: String, required: true },
+  count: { type: Number, required: true, min: 1 }
+});
+
 const roomSchema = new mongoose.Schema({
   adults: { type: Number, required: true, min: 1, max: 4 },
   children: { type: Number, required: true, min: 0, max: 4 }
@@ -12,7 +17,7 @@ const schema = new mongoose.Schema({
   checkInTime: { type: String, required: true },
   checkOutTime: { type: String, required: true },
   nights: { type: Number, required: true },
-  rooms: [roomSchema],
+  selectedRoomTypes: [roomTypeSchema], // Add selected room types
   totalAdults: { type: Number, required: true, min: 1 },
   totalChildren: { type: Number, required: true, min: 0 },
   guestInfo: {
