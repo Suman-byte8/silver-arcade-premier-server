@@ -3,9 +3,10 @@ const router = express.Router();
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const { addRooms, updateRoomDetails, getRooms, deleteRoom, getRoomById, updateRoomStatus } = require('../controllers/Dynamic Content/Room Management/rooms.controller');
 const { upload } = require('../middlewares/uploadMiddleware');
+const { cacheMiddleware, clearCache } = require('../middlewares/cache');
 
 // Room routes
-router.get('/get-rooms', getRooms);
+router.get('/get-rooms', cacheMiddleware(300), getRooms); // Cache for 5 minutes
 router.get('/get-room/:roomId', getRoomById);
 
 // Protected admin routes

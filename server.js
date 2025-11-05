@@ -5,6 +5,18 @@ const connectDB = require('./db/connectDB');
 require('dotenv').config();
 const http = require('http');
 const { init } = require('./utils/socketManager');
+const { cache } = require('./config/redis');
+const {
+  securityMiddleware,
+  additionalSecurityHeaders,
+  requestSizeLimiter,
+  corsOptions
+} = require('./middlewares/security');
+const {
+  apiRateLimiter,
+  authRateLimiter,
+  uploadRateLimiter
+} = require('./middlewares/rateLimiter');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,11 +24,37 @@ const server = http.createServer(app);
 // Initialize socket.io
 init(server);
 
-// Middleware
-app.use(cors()); // Allow all origins for now - must be before DB middleware for OPTIONS requests
-app.use(compression()); // Compress responses for faster loading
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Security middleware (must be first)
+app.use(securityMiddleware);
+app.use(additionalSecurityHeaders);
+
+// CORS configuration
+app.use(cors(corsOptions));
+
+// Rate limiting
+app.use('/api/auth', authRateLimiter);
+app.use('/api/admin', apiRateLimiter);
+app.use('/api/users', apiRateLimiter);
+app.use('/api/rooms/admin', uploadRateLimiter);
+
+// Request size limiting
+app.use(requestSizeLimiter);
+
+// Compression
+app.use(compression({
+  level: 6, // Best compression
+  threshold: 1024, // Compress responses larger than 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Database connection middleware for serverless
 app.use(async (req, res, next) => {
