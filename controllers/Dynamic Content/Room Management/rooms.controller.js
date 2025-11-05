@@ -2,6 +2,7 @@ const cloudinary = require('../../../config/cloudinary')
 const streamifier = require('streamifier');
 const Room = require('../../../schema/rooms.model');
 const { emitRoomEvent } = require('../../../utils/socketManager');
+const dbOptimizer = require('../../../utilities/dbOptimizer');
 
 // add rooms
 async function addRooms(req, res) {
@@ -80,7 +81,11 @@ async function addRooms(req, res) {
             heroImage: heroImageUrl
         });
         await newRoom.save();
-        
+
+        // Clear cache after adding new room
+        const { clearCache } = require('../../../middlewares/cache');
+        clearCache('/api/rooms');
+
         // Emit socket event for new room
         emitRoomEvent('roomCreated', newRoom._id, newRoom);
 
@@ -192,6 +197,10 @@ async function updateRoomDetails(req, res) {
         
         await room.save();
 
+        // Clear cache after room update
+        const { clearCache } = require('../../../middlewares/cache');
+        clearCache('/api/rooms');
+
         // Emit socket event for room update
         emitRoomEvent('roomUpdated', roomId, room);
         if (room.roomStatus) {
@@ -231,6 +240,10 @@ async function updateRoomStatus(req, res) {
         room.roomStatus = roomStatus;
         await room.save();
 
+        // Clear cache after room status update
+        const { clearCache } = require('../../../middlewares/cache');
+        clearCache('/api/rooms');
+
         // Emit socket event for room status update
         emitRoomEvent('roomBookingStatusChanged', roomId, {
             roomId: room._id,
@@ -256,11 +269,19 @@ async function getRooms(req, res) {
         const limit = parseInt(req.query.limit) || 20; // Default limit to 20 for rooms
         const skip = (page - 1) * limit;
 
-        const rooms = await Room.find({})
-            .skip(skip)
-            .limit(limit)
-            .sort({ createdAt: -1 }); // Sort by newest first
+        // Use optimized database query with caching
+        const rooms = await dbOptimizer.find(Room, {}, {
+            skip,
+            limit,
+            sort: { createdAt: -1 },
+            lean: true,
+            cache: true, // Enable caching for room listings
+            cacheKey: `rooms:list:${page}:${limit}`,
+            cacheTTL: 300, // 5 minutes cache
+            context: { endpoint: 'getRooms', page, limit }
+        });
 
+        // Get total count with caching
         const total = await Room.countDocuments();
 
         res.status(200).json({
@@ -290,9 +311,13 @@ async function deleteRoom(req, res) {
             return res.status(404).json({ message: 'Room not found' });
         }
 
+        // Clear cache after room deletion
+        const { clearCache } = require('../../../middlewares/cache');
+        clearCache('/api/rooms');
+
         // Emit socket event for room deletion
         emitRoomEvent('roomDeleted', roomId, { roomId });
-        
+
         res.status(200).json({
             success: true,
             message: 'Room deleted successfully',
