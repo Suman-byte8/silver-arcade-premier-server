@@ -75,6 +75,7 @@ const corsOptions = {
       'http://localhost:3001',
       'http://localhost:5173',
       'http://localhost:5174',
+      'https://silver-arcade-premier.netlify.app',
       'https://yourdomain.com',
       'https://admin.yourdomain.com'
     ].filter(Boolean);
