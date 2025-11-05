@@ -130,7 +130,7 @@ exports.createMeetingReservation = async (req, res) => {
 ==================================================== */
 exports.getReservations = async (req, res) => {
   try {
-    const { type, status, search, startDate, endDate, sortBy = "date_desc", page = 1, limit = 50 } = req.query;
+    const { type, status, search, startDate, endDate, sortBy = "date_desc", page = 1, limit = 10 } = req.query;
     const Model = modelSelector(type);
     if (!Model) return res.status(400).json({ success: false, message: "Invalid type" });
 
