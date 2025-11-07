@@ -6,8 +6,6 @@ const cors = require('cors');
 const compression = require('compression');
 const connectDB = require('./db/connectDB');
 const http = require('http');
-const { init } = require('./utils/socketManager');
-const { cache } = require('./config/redis');
 const {
   securityMiddleware,
   additionalSecurityHeaders,
@@ -23,8 +21,7 @@ const {
 const app = express();
 const server = http.createServer(app);
 
-// Initialize socket.io
-init(server);
+// Socket removed
 
 // Security middleware (must be first)
 app.use(securityMiddleware);

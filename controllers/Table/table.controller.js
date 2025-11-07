@@ -2,8 +2,7 @@
 const { validationResult } = require('express-validator');
 const Table = require('../../schema/Table/table.model'); 
 const mongoose = require('mongoose');
-const { getIo, emitTableEvent } = require('../../utils/socketManager');
-const { emitReservationEvent } = require('../../utils/socketManager');
+// Socket removed
 
 
 // @desc    Create new table
@@ -43,8 +42,7 @@ const createTable = async (req, res) => {
 
         console.log('✅ Table created:', table.tableNumber); // ← DEBUG
 
-        // Emit socket event for real-time updates
-        emitTableEvent('tableCreated', table);
+        // Socket removed
 
         res.status(201).json({
             success: true,
@@ -227,12 +225,7 @@ const updateTable = async (req, res) => {
             });
         }
 
-        // Emit socket event for real-time updates
-        emitTableEvent('tableUpdated', updatedTable, id);
-        // If status changed to occupied/available/reserved, emit a specific event
-        if (filteredUpdateData.status) {
-            emitTableEvent('tableStatusChanged', { tableId: updatedTable._id, tableNumber: updatedTable.tableNumber, status: updatedTable.status }, id);
-        }
+        // Socket removed
 
         console.log(`✅ [DEBUG] Table ${id} updated successfully. Final document:`, {
             _id: updatedTable._id,
@@ -310,8 +303,7 @@ const deleteTable = async (req, res) => {
             });
         }
 
-        // Emit socket event for real-time updates
-        emitTableEvent('tableDeleted', { id: table._id }, id);
+        // Socket removed
 
         console.log('✅ Table deleted:', table.tableNumber); // ← DEBUG
 
@@ -389,8 +381,7 @@ const bulkUpdateTables = async (req, res) => {
             }
         );
 
-        // Emit socket event for real-time updates
-        emitTableEvent('tablesUpdated', { tableIds, updates });
+        // Socket removed
 
         console.log(`✅ Bulk updated ${result.modifiedCount} tables`);
 
@@ -717,14 +708,7 @@ const updateTableStatus = async (req, res) => {
 
         await table.save();
 
-        // Emit socket events for table
-        emitTableEvent('tableUpdated', table, id);
-        emitTableEvent('tableStatusChanged', { tableId: table._id, tableNumber: table.tableNumber, status: table.status }, id);
-
-        // Optionally propagate reservation status change
-        if (reservationId && reservationStatus) {
-            emitReservationEvent('reservationStatusChanged', { id: reservationId, status: reservationStatus }, reservationId);
-        }
+        // Socket removed
 
         return res.status(200).json({ success: true, data: table });
     } catch (error) {
@@ -888,8 +872,7 @@ const resetAllTables = async (req, res) => {
             }
         );
 
-        // Emit socket event for real-time updates
-        emitTableEvent('tablesReset', { count: result.modifiedCount });
+        // Socket removed
 
         console.log(`✅ Reset ${result.modifiedCount} tables to available status`);
 
