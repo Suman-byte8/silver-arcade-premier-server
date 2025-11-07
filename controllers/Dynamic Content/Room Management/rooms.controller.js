@@ -1,7 +1,7 @@
 const cloudinary = require('../../../config/cloudinary')
 const streamifier = require('streamifier');
 const Room = require('../../../schema/rooms.model');
-const { emitRoomEvent } = require('../../../utils/socketManager');
+// Socket removed
 const dbOptimizer = require('../../../utilities/dbOptimizer');
 
 // add rooms
@@ -86,8 +86,7 @@ async function addRooms(req, res) {
         const { clearCache } = require('../../../middlewares/cache');
         clearCache('/api/rooms');
 
-        // Emit socket event for new room
-        emitRoomEvent('roomCreated', newRoom._id, newRoom);
+        // Socket removed
 
         res.status(201).json({
             success: true,
@@ -201,15 +200,7 @@ async function updateRoomDetails(req, res) {
         const { clearCache } = require('../../../middlewares/cache');
         clearCache('/api/rooms');
 
-        // Emit socket event for room update
-        emitRoomEvent('roomUpdated', roomId, room);
-        if (room.roomStatus) {
-            emitRoomEvent('roomBookingStatusChanged', roomId, {
-                roomId: room._id,
-                status: room.roomStatus,
-                bookingId: room.currentBooking
-            });
-        }
+        // Socket removed
 
         res.status(200).json({
             success: true,
@@ -244,12 +235,7 @@ async function updateRoomStatus(req, res) {
         const { clearCache } = require('../../../middlewares/cache');
         clearCache('/api/rooms');
 
-        // Emit socket event for room status update
-        emitRoomEvent('roomBookingStatusChanged', roomId, {
-            roomId: room._id,
-            status: roomStatus,
-            bookingId: room.currentBooking
-        });
+        // Socket removed
 
         res.status(200).json({
             success: true,
@@ -275,9 +261,7 @@ async function getRooms(req, res) {
             limit,
             sort: { createdAt: -1 },
             lean: true,
-            cache: true, // Enable caching for room listings
-            cacheKey: `rooms:list:${page}:${limit}`,
-            cacheTTL: 300, // 5 minutes cache
+            cache: false,
             context: { endpoint: 'getRooms', page, limit }
         });
 
@@ -315,8 +299,7 @@ async function deleteRoom(req, res) {
         const { clearCache } = require('../../../middlewares/cache');
         clearCache('/api/rooms');
 
-        // Emit socket event for room deletion
-        emitRoomEvent('roomDeleted', roomId, { roomId });
+        // Socket removed
 
         res.status(200).json({
             success: true,
