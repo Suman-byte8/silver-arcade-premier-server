@@ -1,8 +1,10 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const connectDB = require('./db/connectDB');
-require('dotenv').config();
 const http = require('http');
 const { init } = require('./utils/socketManager');
 const { cache } = require('./config/redis');

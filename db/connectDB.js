@@ -5,8 +5,14 @@ let isConnected = false; // 🔒 cached connection state
 
 const connectDB = async () => {
   try {
+    const mongoUri = process.env.MONGO_URI;
+
+    if (!mongoUri) {
+      throw new Error('MONGO_URI environment variable is not defined');
+    }
+
     // Always attempt to connect - mongoose will reuse existing connection if available
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
+    const conn = await mongoose.connect(mongoUri, {
       maxPoolSize: 20, // Increased for better concurrency
       minPoolSize: 5, // Minimum connections to maintain
       maxIdleTimeMS: 30000, // Close connections after 30s of inactivity
