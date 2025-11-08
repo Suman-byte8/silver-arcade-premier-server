@@ -167,6 +167,11 @@ const User = require('../schema/user.model');
 // Populate User Activity with user details
 async function populateUserActivity(req, res) {
     try {
+        // Get pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const skip = (page - 1) * limit;
+
         // Remove unwanted activities with unknown user or N/A actions
         await userActivity.deleteMany({
             $or: [
@@ -176,7 +181,7 @@ async function populateUserActivity(req, res) {
         });
 
         // Remove unknown users from User collection
-        await User.deleteMany({ 
+        await User.deleteMany({
             $or: [
                 { firstName: { $exists: false } },
                 { lastName: { $exists: false } },
@@ -184,13 +189,27 @@ async function populateUserActivity(req, res) {
             ]
         });
 
+        // Get total count for pagination
+        const totalActivities = await userActivity.countDocuments();
+
+        // Get paginated activities with user details
         const activities = await dbOptimizer.find(userActivity, {}, {
             populate: { path: 'userId', select: 'firstName lastName email' },
+            sort: { timestamp: -1 }, // Sort by timestamp descending (latest first)
+            skip: skip,
+            limit: limit,
             context: { operation: 'populate_user_activity' }
         });
+
+        const totalPages = Math.ceil(totalActivities / limit);
+
         res.status(200).json({
             success: true,
-            activities
+            activities,
+            total: totalActivities,
+            totalPages,
+            currentPage: page,
+            limit
         });
     } catch (error) {
         console.error('Error fetching user activities:', error);
