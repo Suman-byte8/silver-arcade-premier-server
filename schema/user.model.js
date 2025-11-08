@@ -54,7 +54,8 @@ const userSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        index: true
     },
     address: {
         type: String,
@@ -81,7 +82,6 @@ const userSchema = new mongoose.Schema({
 // Add indexes for performance
 userSchema.index({ status: 1 });
 userSchema.index({ memberShipType: 1 });
-userSchema.index({ email: 1 }); // Already unique, but index for faster lookups
 
 const User = mongoose.model('User', userSchema);
 

@@ -8,11 +8,11 @@ const asyncHandler = require('async-handler');
 // ADD hero banner function
 async function addHeroBanner(req, res) {
     try {
-        const { title, subtitle, description, url } = req.body;
+        const { title, description } = req.body;
         const imageFile = req.file;
 
         // ✅ Validation
-        if (!title || !description || !url || !imageFile) {
+        if (!title || !description || !imageFile) {
             return res.status(400).json({ message: "All fields are required" });
         }
 
@@ -33,10 +33,8 @@ async function addHeroBanner(req, res) {
                 // ✅ Save to DB with Cloudinary URL
                 const heroBanner = await HeroBannerModel.create({
                     title,
-                    subtitle,
                     description,
                     image: result.secure_url,
-                    url,
                     page: "home",
                     section: "hero",
                     isActive: true,
@@ -116,9 +114,7 @@ const updateHeroBanner = (async (req, res) => {
 
                 banner.image = result.secure_url;
                 banner.title = req.body.title || banner.title;
-                banner.subtitle = req.body.subtitle || banner.subtitle;
                 banner.description = req.body.description || banner.description;
-                banner.url = req.body.url || banner.url;
 
                 await banner.save();
 
@@ -130,9 +126,7 @@ const updateHeroBanner = (async (req, res) => {
     } else {
         // no new image, update text only
         banner.title = req.body.title || banner.title;
-        banner.subtitle = req.body.subtitle || banner.subtitle;
         banner.description = req.body.description || banner.description;
-        banner.url = req.body.url || banner.url;
 
         await banner.save();
 

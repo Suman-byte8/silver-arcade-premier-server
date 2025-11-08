@@ -10,7 +10,6 @@ const tableSchema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      index: true,
     },
     section: {
       type: String,
@@ -159,7 +158,6 @@ tableSchema.virtual('isAvailable').get(function () {
 
 // Indexes for performance
 tableSchema.index({ section: 1, status: 1 });
-tableSchema.index({ tableNumber: 1 });
 tableSchema.index({ status: 1, capacity: -1 });
 tableSchema.index({ priority: -1, status: 1 });
 tableSchema.index({ isActive: 1, status: 1 });
