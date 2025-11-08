@@ -56,6 +56,12 @@ const roomsSchema = new mongoose.Schema({
   },
 });
 
+// Add indexes for performance
+roomsSchema.index({ roomStatus: 1 }); // For filtering by status
+roomsSchema.index({ roomType: 1 }); // For filtering by type
+roomsSchema.index({ createdAt: -1 }); // For sorting by newest first
+roomsSchema.index({ roomStatus: 1, roomType: 1 }); // Compound index for status and type queries
+
 
 const Room = mongoose.model('Room', roomsSchema);
 module.exports = Room;

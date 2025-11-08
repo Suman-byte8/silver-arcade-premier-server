@@ -5,10 +5,11 @@
 
 const dbMonitor = require('./dbMonitor');
 const batchProcessor = require('./batchProcessor');
+const { queryCache } = require('../middlewares/cache');
 
 const dbOptimizer = {
     /**
-     * Optimized find operation with monitoring and lean queries
+     * Optimized find operation with monitoring, lean queries, and caching
      */
     find: async function(model, query = {}, options = {}) {
         const {
@@ -18,21 +19,41 @@ const dbOptimizer = {
             limit = 0,
             skip = 0,
             populate = null,
-            context = {}
+            context = {},
+            cache: useCache = false,
+            cacheKey = null,
+            cacheTTL = 300
         } = options;
+
+        // Use cache if enabled
+        if (useCache) {
+            const key = cacheKey || `db:find:${model.modelName}:${JSON.stringify({query, select, sort, limit, skip, populate})}`;
+            return queryCache.get(key, async () => {
+                return this._executeFind(model, query, { select, lean, sort, limit, skip, populate, context });
+            }, cacheTTL);
+        }
+
+        return this._executeFind(model, query, { select, lean, sort, limit, skip, populate, context });
+    },
+
+    /**
+     * Internal find execution method
+     */
+    _executeFind: async function(model, query, options) {
+        const { select, lean, sort, limit, skip, populate, context } = options;
 
         return dbMonitor.monitorQuery(
             'find',
             async () => {
                 let queryBuilder = model.find(query);
-                
+
                 if (select) queryBuilder = queryBuilder.select(select);
                 if (Object.keys(sort).length > 0) queryBuilder = queryBuilder.sort(sort);
                 if (limit > 0) queryBuilder = queryBuilder.limit(limit);
                 if (skip > 0) queryBuilder = queryBuilder.skip(skip);
                 if (populate) queryBuilder = queryBuilder.populate(populate);
                 if (lean) queryBuilder = queryBuilder.lean();
-                
+
                 return queryBuilder.exec();
             },
             { model: model.modelName, ...context }
