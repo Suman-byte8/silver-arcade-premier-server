@@ -81,9 +81,62 @@ const getDistinctives = async (req, res) => {
 const updateDistinctive = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await Distinctive.findByIdAndUpdate(id, req.body, { new: true });
+    const { title, description } = req.body;
+    const newImages = req.files || [];
+
+    // Get existing distinctive
+    const existingDistinctive = await Distinctive.findById(id);
+    if (!existingDistinctive) {
+      return res.status(404).json({ message: "Distinctive not found" });
+    }
+
+    // Handle images: req.body.images contains URLs and files, req.files contains new uploaded files
+    let finalImages = [];
+
+    // Process URLs from req.body.images (existing images that weren't removed)
+    if (req.body.images && Array.isArray(req.body.images)) {
+      const urlImages = req.body.images.filter(img => typeof img === 'string' && img.startsWith('http'));
+      finalImages.push(...urlImages);
+    }
+
+    // Upload new files to Cloudinary
+    if (newImages.length > 0) {
+      const uploadPromises = newImages.map(file => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: "distinctive_features",
+              resource_type: "image",
+              fetch_format: "auto",
+              quality: "auto"
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result.secure_url);
+            }
+          );
+          streamifier.createReadStream(file.buffer).pipe(uploadStream);
+        });
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
+      finalImages.push(...uploadedUrls);
+    }
+
+    // Update the distinctive
+    const updated = await Distinctive.findByIdAndUpdate(
+      id,
+      {
+        title: title || existingDistinctive.title,
+        description: description || existingDistinctive.description,
+        images: finalImages
+      },
+      { new: true }
+    );
+
     res.json({ success: true, message: "Distinctive updated", data: updated });
   } catch (error) {
+    console.error("Error updating distinctive:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

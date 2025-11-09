@@ -23,7 +23,7 @@ router.post("/add-distinctive", protect, authorize("admin"), upload.array("image
 // Get all (public viewing)
 router.get("/distinctives", getDistinctives);
 // Update
-router.put("/distinctive/:id", protect, authorize("admin"), updateDistinctive);
+router.put("/distinctive/:id", protect, authorize("admin"), upload.array("images"), handleMulterError, updateDistinctive);
 // Delete
 router.delete("/distinctive/:id", protect, authorize("admin"), deleteDistinctive);
 
