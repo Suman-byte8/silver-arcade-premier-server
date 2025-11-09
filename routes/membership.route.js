@@ -5,6 +5,7 @@ const {
     getMemberships,
     getMembershipById,
     updateMembershipStatus,
+    updateMembershipDates,
     deleteMembership
 } = require('../controllers/membership.controller');
 const { check } = require('express-validator');
@@ -33,6 +34,9 @@ router.get('/:id', protect, authorize('admin'), getMembershipById);
 
 // Update membership status
 router.put('/:id/status',protect, authorize('admin'), updateMembershipStatus);
+
+// Update membership dates
+router.put('/:id/dates', protect, authorize('admin'), updateMembershipDates);
 
 // Delete membership
 router.delete('/:id',  protect, authorize('admin'),deleteMembership);
