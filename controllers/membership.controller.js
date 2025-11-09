@@ -45,20 +45,31 @@ async function registerMembership(req, res) {
   }
 }
 
-// Fetch memberships list (pending/approved/rejected)
+// Fetch memberships list (pending/approved/rejected/expired)
 async function getMemberships(req, res) {
   try {
+    const { status } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
 
-    const users = await User.find({ status: { $in: ['pending', 'approved', 'rejected'] } })
+    let query = {};
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+      query.status = status;
+    } else if (status === 'expired') {
+      query.memberShipEndDate = { $lt: new Date() };
+      query.status = 'approved';
+    } else {
+      query.status = { $in: ['pending', 'approved', 'rejected'] };
+    }
+
+    const users = await User.find(query)
       .select('firstName lastName email phoneNumber status memberShipType memberShipStartDate memberShipEndDate')
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
 
-    const total = await User.countDocuments({ status: { $in: ['pending', 'approved', 'rejected'] } });
+    const total = await User.countDocuments(query);
 
     return res.status(200).json({
       users,
@@ -83,7 +94,7 @@ async function getMembershipById(req, res) {
 // Update membership status/type → send approval or rejection emails
 async function updateMembershipStatus(req, res) {
   try {
-    const { status, membershipType } = req.body;
+    const { status, membershipType, memberShipStartDate, memberShipEndDate } = req.body;
     if (!['pending', 'approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
@@ -94,6 +105,8 @@ async function updateMembershipStatus(req, res) {
     const updateData = { status };
     if (status === 'approved') {
       updateData.memberShipType = membershipType;
+      if (memberShipStartDate) updateData.memberShipStartDate = memberShipStartDate;
+      if (memberShipEndDate) updateData.memberShipEndDate = memberShipEndDate;
     }
 
     const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true });
@@ -108,6 +121,28 @@ async function updateMembershipStatus(req, res) {
     return res.status(200).json(user);
   } catch (error) {
     return res.status(500).json({ message: 'Server error updating membership status' });
+  }
+}
+
+// Update membership dates for approved members
+async function updateMembershipDates(req, res) {
+  try {
+    const { memberShipStartDate, memberShipEndDate } = req.body;
+    if (!memberShipStartDate || !memberShipEndDate) {
+      return res.status(400).json({ message: 'Membership start and end dates are required' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { memberShipStartDate: new Date(memberShipStartDate), memberShipEndDate: new Date(memberShipEndDate) },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    return res.status(200).json(user);
+  } catch (error) {
+    return res.status(500).json({ message: 'Server error updating membership dates' });
   }
 }
 
@@ -127,5 +162,6 @@ module.exports = {
   getMemberships,
   getMembershipById,
   updateMembershipStatus,
+  updateMembershipDates,
   deleteMembership
 };

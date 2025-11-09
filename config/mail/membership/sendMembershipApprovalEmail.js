@@ -13,7 +13,7 @@ const sendMembershipApprovalEmail = async (membership) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: membership.email,
-      subject: `🎉 Welcome to the ${membership.membershipType} Membership - Silver Arcade Premier`,
+      subject: `🎉 Welcome to the ${membership.memberShipType} Membership - Silver Arcade Premier`,
       html: `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
         <div style="background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 3px 12px rgba(0,0,0,0.08);">
@@ -21,7 +21,7 @@ const sendMembershipApprovalEmail = async (membership) => {
           <h2 style="color: #02008F; text-align: center; margin-bottom: 25px;">🎉 Congratulations, ${membership.firstName}!</h2>
           
           <p style="font-size: 15px; line-height: 1.6; color: #555;">
-            We are thrilled to officially welcome you as a valued <b>${membership.membershipType}</b> Member at 
+            We are thrilled to officially welcome you as a valued <b>${membership.memberShipType}</b> Member at
             <b>Silver Arcade Premier</b>. Your membership has been <span style="color: green;"><b>approved</b></span> and is now active.
           </p>
           
