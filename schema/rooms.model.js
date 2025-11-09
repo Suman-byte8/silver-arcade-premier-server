@@ -8,7 +8,7 @@ const roomsSchema = new mongoose.Schema({
   roomType: {
     type: String,
     required: true,
-    enum: ["Deluxe Room", "Executive Deluxe Room", "Suite"],
+    enum: ["Deluxe Room", "Executive Deluxe Room", "Suite", "Family Suite"],
   },
   roomCapacity: {
     type: Number,
