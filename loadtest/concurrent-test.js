@@ -10,7 +10,7 @@ const path = require('path');
 
 // Configuration
 const CONFIG = {
-  baseURL: process.env.BASE_URL || 'http://localhost:5000',
+  baseURL: process.env.BASE_URL || 'http://localhost:3000',
   concurrentUsers: parseInt(process.env.CONCURRENT_USERS) || 100,
   testDuration: parseInt(process.env.TEST_DURATION) || 300, // 5 minutes
   rampUpTime: parseInt(process.env.RAMP_UP_TIME) || 30, // 30 seconds
@@ -138,3 +138,329 @@ class TestDataGenerator {
     reservationDate.setDate(reservationDate.getDate() + Math.floor(Math.random() * 30) + 1);
 
     const timeSlots = ['12:00', '13:00', '14:00', '19:00', '20:00', '21:00'];
+
+    return {
+      typeOfReservation: 'restaurant',
+      noOfDiners: Math.floor(Math.random() * 7) + 2,
+      date: reservationDate.toISOString().split('T')[0],
+      timeSlot: timeSlots[Math.floor(Math.random() * timeSlots.length)],
+      guestInfo: {
+        name: `Concurrent Diner ${Math.floor(Math.random() * 1000)}`,
+        phoneNumber: `+1234567890${Math.floor(Math.random() * 100)}`,
+        email: `concurrent_diner_${Date.now()}@example.com`
+      },
+      specialRequests: 'Concurrent load testing reservation',
+      agreeToTnC: true
+    };
+  }
+
+  static generateMeetingReservation() {
+    const reservationDate = new Date();
+    reservationDate.setDate(reservationDate.getDate() + Math.floor(Math.random() * 30) + 1);
+
+    const endDate = new Date(reservationDate);
+    endDate.setDate(endDate.getDate() + Math.floor(Math.random() * 3) + 1);
+
+    return {
+      typeOfReservation: 'meeting',
+      reservationDate: reservationDate.toISOString().split('T')[0],
+      reservationEndDate: endDate.toISOString().split('T')[0],
+      numberOfRooms: Math.floor(Math.random() * 3) + 1,
+      numberOfGuests: Math.floor(Math.random() * 16) + 5,
+      additionalDetails: 'Concurrent load testing meeting',
+      guestInfo: {
+        name: `Concurrent Organizer ${Math.floor(Math.random() * 1000)}`,
+        phoneNumber: `+1234567890${Math.floor(Math.random() * 100)}`,
+        email: `concurrent_organizer_${Date.now()}@example.com`
+      },
+      agreeToTnC: true
+    };
+  }
+}
+
+// User session management
+class UserSession {
+  constructor(userId) {
+    this.userId = userId;
+    this.token = null;
+    this.isLoggedIn = false;
+  }
+
+  setToken(token) {
+    this.token = token;
+    this.isLoggedIn = true;
+  }
+
+  getAuthHeader() {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+  }
+}
+
+// Concurrent load test runner
+class LoadTestRunner {
+  constructor(config) {
+    this.config = config;
+    this.performanceTracker = new PerformanceTracker();
+    this.activeUsers = new Map();
+    this.userPool = [];
+    this.isRunning = false;
+  }
+
+  async initializeUserPool() {
+    console.log('🔄 Initializing user pool...');
+    for (let i = 0; i < this.config.concurrentUsers; i++) {
+      const userData = TestDataGenerator.generateUser();
+      try {
+        const response = await axios.post(`${this.config.baseURL}/api/users/register`, userData, {
+          timeout: this.config.requestTimeout
+        });
+
+        if (response.status === 200 || response.status === 201) {
+          const session = new UserSession(i);
+          if (response.data.token) {
+            session.setToken(response.data.token);
+          }
+          this.userPool.push(session);
+          console.log(`✅ User ${i + 1}/${this.config.concurrentUsers} registered`);
+        }
+      } catch (error) {
+        console.log(`❌ Failed to register user ${i + 1}: ${error.message}`);
+      }
+    }
+    console.log(`🎯 User pool initialized with ${this.userPool.length} users`);
+  }
+
+  async loginUser(session) {
+    const loginData = {
+      email: `concurrent_test_${Date.now()}_${session.userId}@example.com`,
+      password: 'TestPassword123!'
+    };
+
+    try {
+      const response = await axios.post(`${this.config.baseURL}/api/users/login`, loginData, {
+        timeout: this.config.requestTimeout
+      });
+
+      if (response.status === 200 && response.data.token) {
+        session.setToken(response.data.token);
+        return true;
+      }
+    } catch (error) {
+      console.log(`❌ Login failed for user ${session.userId}: ${error.message}`);
+    }
+    return false;
+  }
+
+  async executeScenario(session) {
+    const scenarios = Object.keys(this.config.scenarios);
+    const weights = Object.values(this.config.scenarios);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let random = Math.random() * totalWeight;
+
+    for (let i = 0; i < scenarios.length; i++) {
+      random -= weights[i];
+      if (random <= 0) {
+        return await this[scenarios[i]](session);
+      }
+    }
+  }
+
+  async registration(session) {
+    const userData = TestDataGenerator.generateUser();
+    const startTime = performance.now();
+
+    try {
+      const response = await axios.post(`${this.config.baseURL}/api/users/register`, userData, {
+        timeout: this.config.requestTimeout
+      });
+
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, response.status === 200 || response.status === 201);
+
+      if (response.data.token) {
+        session.setToken(response.data.token);
+      }
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, false, error.message);
+    }
+  }
+
+  async login(session) {
+    if (!await this.loginUser(session)) {
+      const responseTime = 0;
+      this.performanceTracker.recordRequest(responseTime, false, 'Login failed');
+      return;
+    }
+
+    const startTime = performance.now();
+    try {
+      const response = await axios.get(`${this.config.baseURL}/api/users/profile`, {
+        headers: session.getAuthHeader(),
+        timeout: this.config.requestTimeout
+      });
+
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, response.status === 200);
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, false, error.message);
+    }
+  }
+
+  async accommodation(session) {
+    if (!session.isLoggedIn && !await this.loginUser(session)) {
+      const responseTime = 0;
+      this.performanceTracker.recordRequest(responseTime, false, 'Login failed for accommodation booking');
+      return;
+    }
+
+    const bookingData = TestDataGenerator.generateAccommodationBooking();
+    const startTime = performance.now();
+
+    try {
+      const response = await axios.post(`${this.config.baseURL}/api/reservations/accommodation`, bookingData, {
+        headers: session.getAuthHeader(),
+        timeout: this.config.requestTimeout
+      });
+
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, response.status === 200 || response.status === 201);
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, false, error.message);
+    }
+  }
+
+  async restaurant(session) {
+    if (!session.isLoggedIn && !await this.loginUser(session)) {
+      const responseTime = 0;
+      this.performanceTracker.recordRequest(responseTime, false, 'Login failed for restaurant reservation');
+      return;
+    }
+
+    const reservationData = TestDataGenerator.generateRestaurantReservation();
+    const startTime = performance.now();
+
+    try {
+      const response = await axios.post(`${this.config.baseURL}/api/reservations/restaurant`, reservationData, {
+        headers: session.getAuthHeader(),
+        timeout: this.config.requestTimeout
+      });
+
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, response.status === 200 || response.status === 201);
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, false, error.message);
+    }
+  }
+
+  async meeting(session) {
+    if (!session.isLoggedIn && !await this.loginUser(session)) {
+      const responseTime = 0;
+      this.performanceTracker.recordRequest(responseTime, false, 'Login failed for meeting reservation');
+      return;
+    }
+
+    const reservationData = TestDataGenerator.generateMeetingReservation();
+    const startTime = performance.now();
+
+    try {
+      const response = await axios.post(`${this.config.baseURL}/api/reservations/meeting`, reservationData, {
+        headers: session.getAuthHeader(),
+        timeout: this.config.requestTimeout
+      });
+
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, response.status === 200 || response.status === 201);
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      this.performanceTracker.recordRequest(responseTime, false, error.message);
+    }
+  }
+
+  async runUserSimulation(userId) {
+    if (this.userPool.length === 0) {
+      console.log(`❌ No users available for simulation ${userId}`);
+      return;
+    }
+
+    const session = this.userPool[userId % this.userPool.length];
+
+    while (this.isRunning) {
+      await this.executeScenario(session);
+
+      // Think time between requests
+      const thinkTime = Math.random() * (this.config.thinkTime.max - this.config.thinkTime.min) + this.config.thinkTime.min;
+      await new Promise(resolve => setTimeout(resolve, thinkTime));
+    }
+  }
+
+  async rampUpUsers() {
+    console.log('🚀 Starting user ramp-up...');
+    const rampUpInterval = this.config.rampUpTime * 1000 / this.config.concurrentUsers;
+
+    for (let i = 0; i < this.config.concurrentUsers; i++) {
+      setTimeout(() => {
+        if (this.isRunning) {
+          this.runUserSimulation(i);
+          console.log(`👤 User ${i + 1} started`);
+        }
+      }, i * rampUpInterval);
+    }
+  }
+
+  async run() {
+    console.log('🏁 Starting concurrent load test...');
+    console.log(`📊 Configuration: ${this.config.concurrentUsers} users, ${this.config.testDuration}s duration`);
+
+    this.isRunning = true;
+
+    // Initialize user pool
+    await this.initializeUserPool();
+
+    // Start ramp-up
+    await this.rampUpUsers();
+
+    // Wait for test duration
+    await new Promise(resolve => setTimeout(resolve, this.config.testDuration * 1000));
+
+    // Stop test
+    this.isRunning = false;
+    this.performanceTracker.end();
+
+    // Print results
+    console.log('\n📈 Load Test Results:');
+    console.log('====================');
+    const stats = this.performanceTracker.getStats();
+    Object.entries(stats).forEach(([key, value]) => {
+      console.log(`${key}: ${value}`);
+    });
+
+    // Save results to file
+    const resultsPath = path.join(__dirname, 'loadtest', 'concurrent-results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify({
+      config: this.config,
+      results: stats,
+      timestamp: new Date().toISOString()
+    }, null, 2));
+
+    console.log(`💾 Results saved to ${resultsPath}`);
+  }
+}
+
+// Main execution
+async function main() {
+  console.log('🔥 Concurrent Load Testing Script');
+  console.log('==================================');
+
+  const runner = new LoadTestRunner(CONFIG);
+  await runner.run();
+}
+
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+module.exports = { LoadTestRunner, PerformanceTracker, TestDataGenerator };

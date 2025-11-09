@@ -14,9 +14,17 @@ A comprehensive load testing suite for the Node.js backend server with multiple 
 
 ### Prerequisites
 
+- [Node.js](https://nodejs.org/) (LTS version recommended)
+- [k6](https://k6.io/docs/getting-started/installation/) installed and available in your PATH.
+- Backend server running (see main `readme.md`)
+
+Before running the tests, install the required dependencies:
+
 ```bash
-npm install -g artillery k6
+# Navigate to the server directory
 cd Server
+
+# Install local dependencies (including Artillery)
 npm install
 ```
 

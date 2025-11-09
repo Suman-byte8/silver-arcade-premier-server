@@ -1,5 +1,5 @@
 config:
-  target: 'http://localhost:{{ $processEnvironment.PORT || 5000 }}'
+  target: 'http://localhost:{{ $processEnvironment.PORT || 3000 }}'
   phases:
     # Warm-up phase
     - duration: 60
@@ -26,7 +26,7 @@ config:
   defaults:
     headers:
       Content-Type: 'application/json'
-  processor: './loadtest/artillery-processor.js'
+  processor: './artillery-processor.js'
 
 scenarios:
   - name: "User Registration Flow"

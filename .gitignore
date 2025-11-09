@@ -24,3 +24,5 @@ npm-debug.log*
 /scripts
 
 TODO.md
+
+/loadtest

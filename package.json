@@ -19,12 +19,13 @@
     "loadtest:k6": "k6 run loadtest/k6-script.js",
     "loadtest:concurrent": "node loadtest/concurrent-test.js",
     "loadtest:ui": "cd loadtest/ui && npm run dev",
-    "loadtest:monitor": "node loadtest/monitoring/server-monitor.js"
+    "loadtest:monitor": "node loadtest/monitoring/server-monitor.js start"
   },
   "author": "suman saha",
   "license": "ISC",
   "dependencies": {
     "async-handler": "^0.0.3",
+    "axios": "^1.13.2",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",
     "bull": "^4.16.5",
@@ -53,8 +54,7 @@
     "trim-request": "^1.0.6"
   },
   "devDependencies": {
-    "pm2": "^6.0.13",
     "artillery": "^2.0.8",
-    "k6": "^0.49.0"
+    "pm2": "^6.0.13"
   }
 }
