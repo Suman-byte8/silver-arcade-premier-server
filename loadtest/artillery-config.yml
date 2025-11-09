@@ -1,0 +1,166 @@
+config:
+  target: 'http://localhost:{{ $processEnvironment.PORT || 5000 }}'
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    # Ramp up to 100 concurrent users
+    - duration: 120
+      arrivalRate: 10
+      rampTo: 100
+      name: "Ramp up to 100 users"
+    # Sustained load at 100 users
+    - duration: 300
+      arrivalRate: 100
+      name: "Sustained 100 users"
+    # Peak load test
+    - duration: 60
+      arrivalRate: 200
+      name: "Peak load 200 users"
+    # Ramp down
+    - duration: 60
+      arrivalRate: 50
+      rampTo: 0
+      name: "Ramp down"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: './loadtest/artillery-processor.js'
+
+scenarios:
+  - name: "User Registration Flow"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/users/register"
+          json:
+            firstName: "Test{{ $randomInt(1000, 9999) }}"
+            lastName: "User{{ $randomInt(1000, 9999) }}"
+            email: "testuser{{ $randomInt(1000, 9999) }}@example.com"
+            password: "TestPassword123!"
+            whatsAppNumber: "+1234567890{{ $randomInt(10, 99) }}"
+            address: "123 Test Street"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 2
+      - post:
+          url: "/api/membership/register"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            firstName: "{{ firstName }}"
+            lastName: "{{ lastName }}"
+            email: "{{ email }}"
+            phoneNumber: "{{ whatsAppNumber }}"
+            country: "Test Country"
+            state: "Test State"
+            city: "Test City"
+
+  - name: "User Login Flow"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/users/login"
+          json:
+            email: "existinguser@example.com"
+            password: "TestPassword123!"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 1
+      - get:
+          url: "/api/users/profile"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  - name: "Accommodation Booking"
+    weight: 25
+    flow:
+      - post:
+          url: "/api/users/login"
+          json:
+            email: "existinguser@example.com"
+            password: "TestPassword123!"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 2
+      - post:
+          url: "/api/reservations/accommodation"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            arrivalDate: "{{ $randomDate('2024-12-01', '2024-12-31') }}"
+            departureDate: "{{ $randomDate('2024-12-02', '2025-01-01') }}"
+            checkInTime: "14:00"
+            checkOutTime: "11:00"
+            nights: "{{ $randomInt(1, 7) }}"
+            selectedRoomTypes:
+              - type: "Deluxe Room"
+                count: "{{ $randomInt(1, 3) }}"
+            totalAdults: "{{ $randomInt(1, 4) }}"
+            totalChildren: "{{ $randomInt(0, 2) }}"
+            specialRequests: "Load test booking"
+            guestInfo:
+              name: "Test Guest {{ $randomInt(1000, 9999) }}"
+              phoneNumber: "+1234567890{{ $randomInt(10, 99) }}"
+              email: "guest{{ $randomInt(1000, 9999) }}@example.com"
+
+  - name: "Restaurant Reservation"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/users/login"
+          json:
+            email: "existinguser@example.com"
+            password: "TestPassword123!"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 1
+      - post:
+          url: "/api/reservations/restaurant"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            typeOfReservation: "restaurant"
+            noOfDiners: "{{ $randomInt(2, 8) }}"
+            date: "{{ $randomDate('2024-12-01', '2024-12-31') }}"
+            timeSlot: "{{ $randomPick(['12:00', '13:00', '14:00', '19:00', '20:00', '21:00']) }}"
+            guestInfo:
+              name: "Test Diner {{ $randomInt(1000, 9999) }}"
+              phoneNumber: "+1234567890{{ $randomInt(10, 99) }}"
+              email: "diner{{ $randomInt(1000, 9999) }}@example.com"
+            specialRequests: "Load test reservation"
+            agreeToTnC: true
+
+  - name: "Meeting Reservation"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/users/login"
+          json:
+            email: "existinguser@example.com"
+            password: "TestPassword123!"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 1
+      - post:
+          url: "/api/reservations/meeting"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            typeOfReservation: "meeting"
+            reservationDate: "{{ $randomDate('2024-12-01', '2024-12-31') }}"
+            reservationEndDate: "{{ $randomDate('2024-12-02', '2025-01-01') }}"
+            numberOfRooms: "{{ $randomInt(1, 3) }}"
+            numberOfGuests: "{{ $randomInt(5, 20) }}"
+            additionalDetails: "Load test meeting"
+            guestInfo:
+              name: "Test Organizer {{ $randomInt(1000, 9999) }}"
+              phoneNumber: "+1234567890{{ $randomInt(10, 99) }}"
+              email: "organizer{{ $randomInt(1000, 9999) }}@example.com"
+            agreeToTnC: true
